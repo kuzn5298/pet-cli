@@ -6,7 +6,7 @@
 
 set -e
 
-VERSION="1.1.3"
+VERSION="1.1.4"
 PET_DIR="${PET_DIR:-$HOME/.pet-cli}"
 PET_CONFIG_DIR="${PET_CONFIG_DIR:-$HOME/.config/pet}"
 LIB_DIR="$PET_DIR/lib"
