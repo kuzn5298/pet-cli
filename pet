@@ -1,0 +1,174 @@
+#!/bin/bash
+#
+# pet-cli - Simple Node.js project manager with sleep support
+# https://github.com/username/pet-cli
+#
+
+set -e
+
+VERSION="1.0.0"
+PET_DIR="${PET_DIR:-$HOME/.pet-cli}"
+PET_CONFIG_DIR="${PET_CONFIG_DIR:-$HOME/.config/pet}"
+LIB_DIR="$PET_DIR/lib"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+# Load library modules
+source "$LIB_DIR/utils.sh"
+source "$LIB_DIR/deploy.sh"
+source "$LIB_DIR/status.sh"
+source "$LIB_DIR/logs.sh"
+source "$LIB_DIR/nginx.sh"
+source "$LIB_DIR/crashes.sh"
+source "$LIB_DIR/config.sh"
+
+# Show help
+show_help() {
+    cat << 'EOF'
+pet-cli - Simple Node.js project manager with sleep support
+
+USAGE:
+    pet <command> [options]
+
+COMMANDS:
+    deploy <name>         Deploy a new project
+    status [name]         Show status of all or specific project
+    list                  List all projects (short)
+    start <name>          Start/wake a project
+    stop <name>           Stop a project (socket stays active)
+    restart <name>        Restart a project
+    enable <name>         Enable a disabled project
+    disable <name>        Fully disable a project (including socket)
+    remove <name>         Remove project from management
+    
+    logs <name>           Show project logs
+    crashes [name]        Show crash history
+    
+    config <name>         Show/edit project configuration
+    
+    nginx <name>          Manage nginx configuration
+    
+    update                Update pet-cli from git
+    version               Show version
+
+DEPLOY OPTIONS:
+    --port <N>            Port number (required)
+    --dir <path>          Project directory (default: /opt/apps/<name>)
+    --cmd <command>       Start command (default: node dist/main.js)
+    --always-on           Don't sleep (always running)
+    --sleep <time>        Sleep timeout (default: 15m)
+    --memory <limit>      Memory limit (default: 100M)
+    --restart-attempts <N> Restart attempts before giving up (default: 3)
+
+EXAMPLES:
+    pet deploy my-api --port 3000
+    pet deploy frontend --port 3001 --always-on
+    pet deploy backend --port 3002 --sleep 30m --memory 200M
+    pet status
+    pet logs my-api -f
+    pet nginx my-api --domain api.example.com
+
+EOF
+}
+
+# Main command router
+main() {
+    local command="${1:-}"
+    shift || true
+
+    case "$command" in
+        deploy)
+            cmd_deploy "$@"
+            ;;
+        status|st)
+            cmd_status "$@"
+            ;;
+        list|ls)
+            cmd_list "$@"
+            ;;
+        start)
+            cmd_start "$@"
+            ;;
+        stop)
+            cmd_stop "$@"
+            ;;
+        restart)
+            cmd_restart "$@"
+            ;;
+        enable)
+            cmd_enable "$@"
+            ;;
+        disable)
+            cmd_disable "$@"
+            ;;
+        remove|rm)
+            cmd_remove "$@"
+            ;;
+        logs|log)
+            cmd_logs "$@"
+            ;;
+        crashes)
+            cmd_crashes "$@"
+            ;;
+        config|cfg)
+            cmd_config "$@"
+            ;;
+        nginx)
+            cmd_nginx "$@"
+            ;;
+        update)
+            cmd_update "$@"
+            ;;
+        version|--version|-v)
+            echo "pet-cli v$VERSION"
+            echo "Installed: $PET_DIR"
+            ;;
+        help|--help|-h)
+            show_help
+            ;;
+        "")
+            show_help
+            exit 1
+            ;;
+        *)
+            echo -e "${RED}Unknown command: $command${NC}"
+            echo "Run 'pet help' for usage"
+            exit 1
+            ;;
+    esac
+}
+
+# Update command
+cmd_update() {
+    echo -e "${CYAN}⟳ Updating pet-cli...${NC}"
+    
+    cd "$PET_DIR"
+    
+    git fetch origin
+    
+    local LOCAL=$(git rev-parse HEAD)
+    local REMOTE=$(git rev-parse origin/main 2>/dev/null || git rev-parse origin/master)
+    
+    if [ "$LOCAL" = "$REMOTE" ]; then
+        echo -e "${GREEN}✓ pet-cli is up to date (v$VERSION)${NC}"
+    else
+        echo "  Pulling changes..."
+        git pull
+        
+        if [ -f "$PET_DIR/install.sh" ]; then
+            echo "  Running install.sh..."
+            bash "$PET_DIR/install.sh"
+        fi
+        
+        echo -e "${GREEN}✓ pet-cli updated${NC}"
+    fi
+}
+
+# Run main
+main "$@"
