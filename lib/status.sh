@@ -242,10 +242,10 @@ show_all_status() {
     # Header
     echo ""
     printf "┌─────────────────────────────────────────────────────────────────────────────┐\n"
-    printf "│  ${CYAN}PET PROJECTS${NC}                                                              │\n"
-    printf "├──────────────┬────────┬───────┬─────────┬───────────┬───────────────────────┤\n"
-    printf "│ %-12s │ %-6s │ %-5s │ %-7s │ %-9s │ %-21s │\n" "Name" "Status" "Port" "Memory" "Uptime" "Mode"
-    printf "├──────────────┼────────┼───────┼─────────┼───────────┼───────────────────────┤\n"
+    printf "│  ${CYAN}PET PROJECTS${NC}                                                               │\n"
+    printf "┌──────────────────┬────────┬───────┬─────────┬───────────┬───────────────────┐\n"
+    printf "│ %-16s │ %-6s │ %-5s │ %-7s │ %-9s │ %-17s │\n" "Name" "Status" "Port" "Memory" "Uptime" "Mode"
+    printf "├──────────────────┼────────┼───────┼─────────┼───────────┼───────────────────┤\n"
     
     local name status icon mem uptime mode_str
     for name in "${projects[@]}"; do
@@ -282,7 +282,7 @@ show_all_status() {
             "$name" "$icon" "$status" "$PROJECT_PORT" "$mem" "$uptime" "$mode_str"
     done
     
-    printf "└──────────────┴────────┴───────┴─────────┴───────────┴───────────────────────┘\n"
+    printf "└──────────────────┴────────┴───────┴─────────┴───────────┴───────────────────┘\n"
     echo ""
     echo "  Total memory: ${total_mem}MB / 600MB (slice limit)"
 }
