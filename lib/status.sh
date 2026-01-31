@@ -242,7 +242,7 @@ show_all_status() {
     # Header
     echo ""
     printf "┌───────────────────────────────────────────────────────────────────────────────┐\n"
-    printf "│  ${CYAN}PET PROJECTS${NC}                                                               │\n"
+    printf "│  ${CYAN}PET PROJECTS${NC}                                                                 │\n"
     printf "├──────────────────┬──────────┬───────┬─────────┬───────────┬───────────────────┤\n"
     printf "│ %-16s │ %-8s │ %-5s │ %-7s │ %-9s │ %-17s │\n" "Name" "Status" "Port" "Memory" "Uptime" "Mode"
     printf "├──────────────────┼──────────┼───────┼─────────┼───────────┼───────────────────┤\n"
@@ -278,7 +278,7 @@ show_all_status() {
             mem="${mem} MB"
         fi
         
-        printf "│ %-16s │ %s %-6s │ %-5s │ %-7s │ %-9s │ %-17s │\n" \
+        printf "│ %-16s │ %s %-5s │ %-5s │ %-7s │ %-9s │ %-17s │\n" \
             "$name" "$icon" "$status" "$PROJECT_PORT" "$mem" "$uptime" "$mode_str"
     done
     
