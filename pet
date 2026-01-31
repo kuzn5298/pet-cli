@@ -6,7 +6,7 @@
 
 set -e
 
-VERSION="1.0.0"
+VERSION="1.1.0"
 PET_DIR="${PET_DIR:-$HOME/.pet-cli}"
 PET_CONFIG_DIR="${PET_CONFIG_DIR:-$HOME/.config/pet}"
 LIB_DIR="$PET_DIR/lib"
@@ -22,6 +22,7 @@ NC='\033[0m' # No Color
 # Load library modules
 source "$LIB_DIR/utils.sh"
 source "$LIB_DIR/deploy.sh"
+source "$LIB_DIR/setup.sh"
 source "$LIB_DIR/status.sh"
 source "$LIB_DIR/logs.sh"
 source "$LIB_DIR/nginx.sh"
@@ -37,14 +38,15 @@ USAGE:
     pet <command> [options]
 
 COMMANDS:
+    setup <name>          Full setup (dir + db + nginx + ssl)
     deploy <name>         Deploy a new project
     status [name]         Show status of all or specific project
     list                  List all projects (short)
     start <name>          Start/wake a project
-    stop <name>           Stop a project (socket stays active)
+    stop <name>           Stop a project
     restart <name>        Restart a project
     enable <name>         Enable a disabled project
-    disable <name>        Fully disable a project (including socket)
+    disable <name>        Fully disable a project
     remove <name>         Remove project from management
     
     logs <name>           Show project logs
@@ -57,22 +59,22 @@ COMMANDS:
     update                Update pet-cli from git
     version               Show version
 
-DEPLOY OPTIONS:
-    --port <N>            Port number (required)
+SETUP OPTIONS:
+    --port <N>            Port number (required for proxy)
+    --domain <domain>     Domain name for nginx + SSL
+    --db <user:pass>      Create PostgreSQL database
     --dir <path>          Project directory (default: /opt/apps/<name>)
     --cmd <command>       Start command (default: node dist/main.js)
-    --always-on           Don't sleep (always running)
-    --sleep <time>        Sleep timeout (default: 15m)
     --memory <limit>      Memory limit (default: 100M)
-    --restart-attempts <N> Restart attempts before giving up (default: 3)
+    --always-on           Keep running (no sleep)
+    --spa                 SPA type (static + routing)
+    --static              Static file type (CDN)
 
 EXAMPLES:
-    pet deploy my-api --port 3000
-    pet deploy frontend --port 3001 --always-on
-    pet deploy backend --port 3002 --sleep 30m --memory 200M
+    pet setup my-api --port 3000 --domain api.example.com --db user:pass --always-on
+    pet setup my-spa --spa --domain app.example.com
     pet status
     pet logs my-api -f
-    pet nginx my-api --domain api.example.com
 
 EOF
 }
@@ -83,6 +85,9 @@ main() {
     shift || true
 
     case "$command" in
+        setup)
+            cmd_setup "$@"
+            ;;
         deploy)
             cmd_deploy "$@"
             ;;

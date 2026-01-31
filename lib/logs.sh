@@ -9,7 +9,6 @@ cmd_logs() {
     local follow=false
     local lines=20
     
-    # Parse arguments
     while [[ $# -gt 0 ]]; do
         case "$1" in
             -f|--follow)
@@ -37,7 +36,6 @@ cmd_logs() {
         exit 1
     fi
     
-    # Validate project exists
     if ! project_exists "$name"; then
         echo -e "${RED}Error: Project '$name' not found${NC}" >&2
         exit 1

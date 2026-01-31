@@ -13,25 +13,9 @@ NC='\033[0m'
 
 echo "Installing pet-cli..."
 
-# Check dependencies
-check_dependency() {
-    if ! command -v "$1" &> /dev/null; then
-        echo -e "${YELLOW}Warning: $1 not found${NC}"
-        return 1
-    fi
-    return 0
-}
-
-echo "Checking dependencies..."
-check_dependency node || echo "  Node.js is required for your projects"
-check_dependency systemctl || { echo "  systemd is required"; exit 1; }
-check_dependency nginx || echo "  nginx recommended for domains (optional)"
-check_dependency certbot || echo "  certbot recommended for SSL (optional)"
-check_dependency jq || echo "  jq recommended for crash analysis (optional)"
-
 # Make scripts executable
 chmod +x "$SCRIPT_DIR/pet"
-chmod +x "$SCRIPT_DIR/lib/"*.sh
+chmod +x "$SCRIPT_DIR/lib/"*.sh 2>/dev/null || true
 
 # Create symlink in /usr/local/bin
 if [ -w /usr/local/bin ]; then
@@ -51,31 +35,31 @@ if command -v loginctl &> /dev/null; then
     echo -e "${GREEN}✓${NC} Enabled user lingering"
 fi
 
+# Add DBUS fix to bashrc if not present
+if ! grep -q "DBUS_SESSION_BUS_ADDRESS" "$HOME/.bashrc" 2>/dev/null; then
+    echo 'export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus' >> "$HOME/.bashrc"
+    echo -e "${GREEN}✓${NC} Added DBUS fix to .bashrc"
+fi
+
 # Install nginx snippets if nginx exists
-if command -v nginx &> /dev/null; then
-    if [ -d /etc/nginx/snippets ]; then
-        echo "Installing nginx snippets..."
+if [ -d /etc/nginx/snippets ]; then
+    echo "Installing nginx snippets..."
+    
+    for snippet in "$SCRIPT_DIR/templates/snippets/"*.conf; do
+        [ -f "$snippet" ] || continue
+        snippet_name=$(basename "$snippet")
         
-        for snippet in "$SCRIPT_DIR/templates/snippets/"*.conf; do
-            [ -f "$snippet" ] || continue
-            local name=$(basename "$snippet")
-            
-            if [ ! -f "/etc/nginx/snippets/$name" ]; then
-                sudo cp "$snippet" "/etc/nginx/snippets/$name"
-                echo -e "${GREEN}✓${NC} Installed $name"
-            else
-                echo "  Skipping $name (already exists)"
-            fi
-        done
-    fi
+        if [ ! -f "/etc/nginx/snippets/$snippet_name" ]; then
+            sudo cp "$snippet" "/etc/nginx/snippets/$snippet_name"
+            echo -e "${GREEN}✓${NC} Installed $snippet_name"
+        fi
+    done
 fi
 
 echo ""
 echo -e "${GREEN}✓ pet-cli installed successfully${NC}"
 echo ""
 echo "Quick start:"
-echo "  pet deploy my-app --port 3000"
+echo "  pet setup my-app --port 3000 --domain app.example.com"
 echo "  pet status"
 echo "  pet --help"
-echo ""
-echo "Documentation: https://github.com/username/pet-cli"

@@ -11,10 +11,9 @@ cmd_nginx() {
     local enable=false
     local disable=false
     local remove=false
-    local list=false
+    local list_all=false
     local renew_ssl=false
     
-    # Parse arguments
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --domain)
@@ -38,7 +37,7 @@ cmd_nginx() {
                 shift
                 ;;
             --list)
-                list=true
+                list_all=true
                 shift
                 ;;
             --renew-ssl)
@@ -56,8 +55,7 @@ cmd_nginx() {
         esac
     done
     
-    # Handle global commands
-    if [ "$list" = true ]; then
+    if [ "$list_all" = true ]; then
         nginx_list
         return
     fi
@@ -67,11 +65,9 @@ cmd_nginx() {
         return
     fi
     
-    # Require project name for other commands
     if [ -z "$name" ]; then
         echo -e "${RED}Error: Project name required${NC}" >&2
         echo "Usage: pet nginx <n> --domain <domain>" >&2
-        echo "       pet nginx --list" >&2
         exit 1
     fi
     
@@ -88,7 +84,6 @@ cmd_nginx() {
     elif [ -n "$domain" ]; then
         nginx_add "$name" "$domain"
     else
-        # Show current config if exists, otherwise show help
         if [ -f "/etc/nginx/sites-available/pet-${name}.conf" ]; then
             nginx_show "$name"
         else
@@ -108,7 +103,6 @@ nginx_add() {
     local conf_available="/etc/nginx/sites-available/pet-${name}.conf"
     local conf_enabled="/etc/nginx/sites-enabled/pet-${name}.conf"
     
-    # Select template based on project type
     local template=""
     local project_type="${PROJECT_TYPE:-proxy}"
     
@@ -131,51 +125,47 @@ nginx_add() {
         exit 1
     fi
     
-    # Generate config
-    local config_content=$(cat "$template" | \
+    local config_content
+    config_content=$(cat "$template" | \
         sed "s|{{PROJECT_NAME}}|$name|g" | \
         sed "s|{{PROJECT_PORT}}|$PROJECT_PORT|g" | \
         sed "s|{{PROJECT_DOMAIN}}|$domain|g" | \
         sed "s|{{PROJECT_DIR}}|$PROJECT_DIR|g" | \
         sed "s|{{PROJECT_MAX_BODY_SIZE}}|${PROJECT_MAX_BODY_SIZE:-10M}|g")
     
-    # Write config (needs sudo)
     echo "$config_content" | sudo tee "$conf_available" > /dev/null
     echo -e "${GREEN}✓${NC} Created $conf_available"
     
-    # Create symlink
+    # Get SSL certificate first
+    echo -e "${CYAN}Obtaining SSL certificate...${NC}"
+    
+    if sudo certbot certonly --nginx -d "$domain" --non-interactive --agree-tos --register-unsafely-without-email 2>/dev/null; then
+        echo -e "${GREEN}✓${NC} Certificate obtained"
+        
+        # Uncomment SSL lines
+        sudo sed -i "s|# ssl_certificate /etc/letsencrypt/live/${domain}/|ssl_certificate /etc/letsencrypt/live/${domain}/|g" "$conf_available"
+        sudo sed -i "s|# ssl_certificate_key /etc/letsencrypt/live/${domain}/|ssl_certificate_key /etc/letsencrypt/live/${domain}/|g" "$conf_available"
+    else
+        echo -e "${YELLOW}⚠ Could not obtain certificate automatically${NC}"
+        echo "  Run manually: sudo certbot certonly --nginx -d $domain"
+    fi
+    
+    # Enable config
     sudo ln -sf "$conf_available" "$conf_enabled"
     echo -e "${GREEN}✓${NC} Linked to sites-enabled"
     
-    # Test nginx config
-    echo -n "  Testing nginx config... "
+    # Test and reload
     if sudo nginx -t 2>/dev/null; then
-        echo "OK"
+        sudo systemctl reload nginx
+        echo -e "${GREEN}🌐 https://$domain → $name${NC}"
     else
-        echo -e "${RED}FAILED${NC}"
         sudo rm -f "$conf_enabled"
-        echo "Config disabled. Fix errors and try again."
-        exit 1
+        echo -e "${RED}✗ nginx config error - disabled${NC}"
+        echo "  Check: sudo nginx -t"
     fi
     
-    # Reload nginx
-    sudo systemctl reload nginx
-    
-    # Try to get SSL certificate
-    echo -e "${CYAN}Obtaining SSL certificate...${NC}"
-    
-    if sudo certbot --nginx -d "$domain" --non-interactive --agree-tos --register-unsafely-without-email 2>/dev/null; then
-        echo -e "${GREEN}✓${NC} Certificate obtained"
-    else
-        echo -e "${YELLOW}⚠ Could not obtain certificate automatically${NC}"
-        echo "  Run manually: sudo certbot --nginx -d $domain"
-    fi
-    
-    # Update project config with domain
     PROJECT_DOMAIN="$domain"
     save_project_config "$name"
-    
-    echo -e "${GREEN}🌐 https://$domain → $name ($project_type)${NC}"
 }
 
 # Show nginx config
@@ -202,14 +192,7 @@ nginx_enable() {
         exit 1
     fi
     
-    if [ -L "$conf_enabled" ]; then
-        echo "Already enabled"
-        return
-    fi
-    
     sudo ln -sf "$conf_available" "$conf_enabled"
-    echo -e "${GREEN}✓${NC} Created symlink in sites-enabled"
-    
     sudo nginx -t && sudo systemctl reload nginx
     echo -e "${GREEN}🌐 $name nginx config enabled${NC}"
 }
@@ -219,14 +202,7 @@ nginx_disable() {
     local name="$1"
     local conf_enabled="/etc/nginx/sites-enabled/pet-${name}.conf"
     
-    if [ ! -L "$conf_enabled" ]; then
-        echo "Already disabled"
-        return
-    fi
-    
     sudo rm -f "$conf_enabled"
-    echo -e "${GREEN}✓${NC} Removed symlink from sites-enabled"
-    
     sudo systemctl reload nginx
     echo -e "${GREEN}⏹ $name nginx config disabled${NC}"
 }
@@ -239,14 +215,10 @@ nginx_remove() {
     
     sudo rm -f "$conf_enabled"
     sudo rm -f "$conf_available"
-    
-    echo -e "${GREEN}✓${NC} Removed from sites-enabled"
-    echo -e "${GREEN}✓${NC} Removed from sites-available"
-    
     sudo systemctl reload nginx
+    
     echo -e "${GREEN}🗑 $name nginx config removed${NC}"
     
-    # Update project config
     load_project_config "$name"
     PROJECT_DOMAIN=""
     save_project_config "$name"
@@ -260,22 +232,21 @@ nginx_list() {
     printf "├──────────────┼─────────────────────────────────┼─────────┤\n"
     
     local found=false
+    local conf filename name domain ssl
     
-    for conf in /etc/nginx/sites-available/pet-*.conf 2>/dev/null; do
+    for conf in /etc/nginx/sites-available/pet-*.conf; do
         [ -f "$conf" ] || continue
         found=true
         
-        local filename=$(basename "$conf")
-        local name="${filename#pet-}"
+        filename=$(basename "$conf")
+        name="${filename#pet-}"
         name="${name%.conf}"
         
-        # Extract domain from config
-        local domain=$(grep "server_name" "$conf" | head -1 | awk '{print $2}' | tr -d ';')
+        domain=$(grep "server_name" "$conf" 2>/dev/null | head -1 | awk '{print $2}' | tr -d ';')
         
-        # Check SSL
-        local ssl="✗"
+        ssl="✗"
         if [ -f "/etc/letsencrypt/live/$domain/fullchain.pem" ]; then
-            ssl="✓ valid"
+            ssl="✓"
         fi
         
         printf "│ %-12s │ %-31s │ %-7s │\n" "$name" "$domain" "$ssl"

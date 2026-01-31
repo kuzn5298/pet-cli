@@ -23,7 +23,8 @@ project_exists() {
 # Load project config
 load_project_config() {
     local name="$1"
-    local config_file="$(get_project_config "$name")"
+    local config_file
+    config_file="$(get_project_config "$name")"
     
     if [ ! -f "$config_file" ]; then
         echo -e "${RED}Error: Project '$name' not found${NC}" >&2
@@ -37,7 +38,8 @@ load_project_config() {
 # Save project config
 save_project_config() {
     local name="$1"
-    local config_file="$(get_project_config "$name")"
+    local config_file
+    config_file="$(get_project_config "$name")"
     
     ensure_config_dir
     
@@ -50,7 +52,6 @@ PROJECT_PORT="$PROJECT_PORT"
 PROJECT_DIR="$PROJECT_DIR"
 PROJECT_CMD="$PROJECT_CMD"
 PROJECT_MODE="$PROJECT_MODE"
-PROJECT_SLEEP_TIMEOUT="$PROJECT_SLEEP_TIMEOUT"
 PROJECT_MEMORY="$PROJECT_MEMORY"
 PROJECT_RESTART_ATTEMPTS="$PROJECT_RESTART_ATTEMPTS"
 PROJECT_RESTART_DELAY="$PROJECT_RESTART_DELAY"
@@ -64,8 +65,11 @@ EOF
 # List all projects
 list_projects() {
     ensure_config_dir
-    for f in "$PET_CONFIG_DIR/projects"/*.conf 2>/dev/null; do
-        [ -f "$f" ] && basename "$f" .conf
+    local f
+    for f in "$PET_CONFIG_DIR/projects"/*.conf; do
+        if [ -f "$f" ]; then
+            basename "$f" .conf
+        fi
     done
 }
 
@@ -75,43 +79,37 @@ get_service_status() {
     systemctl --user is-active "pet-${name}.service" 2>/dev/null || echo "inactive"
 }
 
-# Get socket status
-get_socket_status() {
-    local name="$1"
-    systemctl --user is-active "pet-${name}.socket" 2>/dev/null || echo "inactive"
-}
-
 # Get memory usage in MB
 get_memory_usage() {
     local name="$1"
-    local mem_bytes=$(systemctl --user show "pet-${name}.service" --property=MemoryCurrent 2>/dev/null | cut -d= -f2)
+    local mem_bytes
+    mem_bytes=$(systemctl --user show "pet-${name}.service" --property=MemoryCurrent 2>/dev/null | cut -d= -f2)
     
-    if [ -n "$mem_bytes" ] && [ "$mem_bytes" != "[not set]" ] && [ "$mem_bytes" -gt 0 ] 2>/dev/null; then
-        echo $((mem_bytes / 1024 / 1024))
-    else
-        echo "-"
+    if [ -n "$mem_bytes" ] && [ "$mem_bytes" != "[not set]" ]; then
+        if [ "$mem_bytes" -gt 0 ] 2>/dev/null; then
+            echo $((mem_bytes / 1024 / 1024))
+            return
+        fi
     fi
+    echo "-"
 }
 
 # Get uptime
 get_uptime() {
     local name="$1"
-    local timestamp=$(systemctl --user show "pet-${name}.service" --property=ActiveEnterTimestamp 2>/dev/null | cut -d= -f2)
+    local timestamp
+    timestamp=$(systemctl --user show "pet-${name}.service" --property=ActiveEnterTimestamp 2>/dev/null | cut -d= -f2)
     
     if [ -z "$timestamp" ] || [ "$timestamp" = "" ]; then
         echo "-"
         return
     fi
     
-    local start_sec=$(date -d "$timestamp" +%s 2>/dev/null)
-    local now_sec=$(date +%s)
+    local start_sec now_sec diff
+    start_sec=$(date -d "$timestamp" +%s 2>/dev/null) || { echo "-"; return; }
+    now_sec=$(date +%s)
     
-    if [ -z "$start_sec" ]; then
-        echo "-"
-        return
-    fi
-    
-    local diff=$((now_sec - start_sec))
+    diff=$((now_sec - start_sec))
     
     if [ $diff -lt 60 ]; then
         echo "${diff}s"
@@ -130,21 +128,6 @@ get_restart_count() {
     systemctl --user show "pet-${name}.service" --property=NRestarts 2>/dev/null | cut -d= -f2 || echo "0"
 }
 
-# Parse time string (15m, 1h, 30s) to seconds
-parse_time_to_seconds() {
-    local time_str="$1"
-    local value="${time_str%[smhd]}"
-    local unit="${time_str: -1}"
-    
-    case "$unit" in
-        s) echo "$value" ;;
-        m) echo $((value * 60)) ;;
-        h) echo $((value * 3600)) ;;
-        d) echo $((value * 86400)) ;;
-        *) echo "$time_str" ;;  # assume seconds if no unit
-    esac
-}
-
 # Validate project name
 validate_project_name() {
     local name="$1"
@@ -161,14 +144,15 @@ validate_project_name() {
 check_port_available() {
     local port="$1"
     local name="$2"
+    local f existing_name existing_port
     
     # Check if another project uses this port
-    for f in "$PET_CONFIG_DIR/projects"/*.conf 2>/dev/null; do
+    for f in "$PET_CONFIG_DIR/projects"/*.conf; do
         [ -f "$f" ] || continue
-        local existing_name=$(basename "$f" .conf)
+        existing_name=$(basename "$f" .conf)
         [ "$existing_name" = "$name" ] && continue
         
-        local existing_port=$(grep "^PROJECT_PORT=" "$f" | cut -d'"' -f2)
+        existing_port=$(grep "^PROJECT_PORT=" "$f" 2>/dev/null | cut -d'"' -f2)
         if [ "$existing_port" = "$port" ]; then
             echo -e "${RED}Error: Port $port is already used by '$existing_name'${NC}" >&2
             exit 1
@@ -181,10 +165,6 @@ check_port_available() {
         if systemctl --user is-active "pet-${name}.service" &>/dev/null; then
             return 0
         fi
-        if systemctl --user is-active "pet-${name}.socket" &>/dev/null; then
-            return 0
-        fi
-        
         echo -e "${YELLOW}Warning: Port $port appears to be in use${NC}" >&2
     fi
 }

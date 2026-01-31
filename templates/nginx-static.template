@@ -15,20 +15,15 @@ server {
 
     root {{PROJECT_DIR}};
 
-    # SSL certificates (certbot will add these)
+    # SSL certificates (uncommented after certbot)
     # ssl_certificate /etc/letsencrypt/live/{{PROJECT_DOMAIN}}/fullchain.pem;
     # ssl_certificate_key /etc/letsencrypt/live/{{PROJECT_DOMAIN}}/privkey.pem;
 
-    # Include SSL params
     include /etc/nginx/snippets/ssl-params.conf;
-
-    # Security headers
     include /etc/nginx/snippets/security-headers.conf;
 
-    # CORS for loading from other domains
     add_header Access-Control-Allow-Origin *;
 
-    # Gzip compression
     gzip on;
     gzip_vary on;
     gzip_min_length 1024;
@@ -37,21 +32,13 @@ server {
                image/svg+xml;
 
     location / {
-        # Aggressive caching for static files
         expires 1y;
         add_header Cache-Control "public, immutable";
-
-        # Try to serve file, then directory, then 404
         try_files $uri $uri/ =404;
     }
 
-    # Deny hidden files
     location ~ /\. {
         deny all;
         access_log off;
     }
-
-    # Logs (minimal for CDN)
-    access_log /var/log/nginx/{{PROJECT_NAME}}-access.log;
-    error_log /var/log/nginx/{{PROJECT_NAME}}-error.log;
 }
