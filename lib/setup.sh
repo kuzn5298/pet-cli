@@ -184,7 +184,12 @@ cmd_setup() {
     echo "  Directory:  $dir"
     [ -n "$port" ] && echo "  Port:       $port"
     [ -n "$domain" ] && echo "  Domain:     https://$domain"
-    [ -n "$db" ] && echo "  Database:   postgresql://${db%:*}:***@localhost:5432/$name"
+    if [ -n "$db" ]; then
+        local safe_db_name="${name//-/_}"
+        local safe_db_user="${db%:*}"
+        safe_db_user="${safe_db_user//-/_}"
+        echo "  Database:   postgresql://${safe_db_user}:***@localhost:5432/${safe_db_name}"
+    fi
     echo "  Env file:   /opt/env/$name.env"
     echo ""
     echo "Next steps:"
@@ -198,40 +203,43 @@ cmd_setup() {
 setup_database() {
     local db_creds="$1"
     local db_name="$2"
-    
+
     # Parse user:password
     local db_user="${db_creds%:*}"
     local db_pass="${db_creds#*:}"
-    
+
     if [ -z "$db_user" ] || [ -z "$db_pass" ]; then
         echo -e "${RED}  Error: Invalid db format. Use --db user:password${NC}"
         return 1
     fi
-    
+
+    # Replace hyphens with underscores for PostgreSQL compatibility
+    local safe_db_name="${db_name//-/_}"
+    local safe_db_user="${db_user//-/_}"
+
     # Check if database exists
-    if sudo -u postgres psql -lqt 2>/dev/null | cut -d \| -f 1 | grep -qw "$db_name"; then
-        echo -e "${GREEN}  ✓ Database '$db_name' already exists${NC}"
+    if sudo -u postgres psql -lqt 2>/dev/null | cut -d \| -f 1 | grep -qw "$safe_db_name"; then
+        echo -e "${GREEN}  ✓ Database '$safe_db_name' already exists${NC}"
         return 0
     fi
-    
+
     # Create user and database
-    sudo -u postgres psql -q << EOF
+    if sudo -u postgres psql -q << EOF
 DO \$\$
 BEGIN
-    IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '$db_user') THEN
-        CREATE USER $db_user WITH PASSWORD '$db_pass';
+    IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '$safe_db_user') THEN
+        CREATE USER "$safe_db_user" WITH PASSWORD '$db_pass';
     ELSE
-        ALTER USER $db_user WITH PASSWORD '$db_pass';
+        ALTER USER "$safe_db_user" WITH PASSWORD '$db_pass';
     END IF;
 END
 \$\$;
 
-CREATE DATABASE $db_name OWNER $db_user;
-GRANT ALL PRIVILEGES ON DATABASE $db_name TO $db_user;
+CREATE DATABASE "$safe_db_name" OWNER "$safe_db_user";
+GRANT ALL PRIVILEGES ON DATABASE "$safe_db_name" TO "$safe_db_user";
 EOF
-    
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}  ✓ Created database '$db_name' with user '$db_user'${NC}"
+    then
+        echo -e "${GREEN}  ✓ Created database '$safe_db_name' with user '$safe_db_user'${NC}"
     else
         echo -e "${RED}  ✗ Failed to create database${NC}"
         return 1
@@ -242,30 +250,33 @@ EOF
 setup_env_file() {
     local name="$1"
     local db="$2"
-    
+
     local env_dir="/opt/env"
     local env_file="$env_dir/$name.env"
-    
+
     # Create env directory
     if [ ! -d "$env_dir" ]; then
         sudo mkdir -p "$env_dir"
         sudo chown "$(whoami):$(whoami)" "$env_dir"
     fi
-    
+
     # Create env file if doesn't exist
     if [ ! -f "$env_file" ]; then
         touch "$env_file"
         chmod 600 "$env_file"
-        
+
         # Add database URL if provided
         if [ -n "$db" ]; then
             local db_user="${db%:*}"
             local db_pass="${db#*:}"
-            echo "DATABASE_URL=postgresql://${db_user}:${db_pass}@localhost:5432/$name" >> "$env_file"
+            # Replace hyphens with underscores for PostgreSQL compatibility
+            local safe_db_name="${name//-/_}"
+            local safe_db_user="${db_user//-/_}"
+            echo "DATABASE_URL=postgresql://${safe_db_user}:${db_pass}@localhost:5432/${safe_db_name}" >> "$env_file"
         fi
-        
+
         echo "NODE_ENV=production" >> "$env_file"
-        
+
         echo -e "${GREEN}  ✓ Created $env_file${NC}"
     else
         echo -e "${GREEN}  ✓ Env file exists${NC}"
