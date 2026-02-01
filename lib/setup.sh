@@ -17,6 +17,8 @@ cmd_setup() {
     local skip_db=false
     local skip_nginx=false
     local skip_ssl=false
+    local sleep_enabled="false"
+    local sleep_timeout="30m"
     
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -72,6 +74,14 @@ cmd_setup() {
             --skip-ssl)
                 skip_ssl=true
                 shift
+                ;;
+            --sleep)
+                sleep_enabled="true"
+                shift
+                ;;
+            --sleep-timeout)
+                sleep_timeout="$2"
+                shift 2
                 ;;
             -*)
                 echo -e "${RED}Unknown option: $1${NC}" >&2
@@ -155,6 +165,9 @@ cmd_setup() {
     PROJECT_USER="$(whoami)"
     PROJECT_TYPE="$project_type"
     PROJECT_MAX_BODY_SIZE="$max_body_size"
+    PROJECT_SLEEP_ENABLED="$sleep_enabled"
+    PROJECT_SLEEP_TIMEOUT="$sleep_timeout"
+    PROJECT_SLEEP_STATUS="awake"
     
     save_project_config "$name"
     
