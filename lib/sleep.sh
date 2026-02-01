@@ -301,7 +301,7 @@ sleep_service_status() {
     case "$waker_status" in
         active) waker_icon="🟢 running" ;;
         failed) waker_icon="🔴 failed" ;;
-        *) waker_icon="⏹ stopped" ;;
+        *) waker_icon="⬛ stopped" ;;
     esac
     printf "│ pet-waker:        %-28s │\n" "$waker_icon"
 
@@ -311,7 +311,7 @@ sleep_service_status() {
     case "$sleeper_status" in
         active) sleeper_icon="🟢 running" ;;
         failed) sleeper_icon="🔴 failed" ;;
-        *) sleeper_icon="⏹ stopped" ;;
+        *) sleeper_icon="⬛ stopped" ;;
     esac
     printf "│ pet-sleeper.timer: %-27s │\n" "$sleeper_icon"
 

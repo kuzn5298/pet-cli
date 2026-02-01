@@ -27,15 +27,20 @@ cmd_list() {
 
     local name status icon
     for name in "${projects[@]}"; do
+        load_project_config "$name" 2>/dev/null || continue
+
         # Check if sleeping first
         if is_project_sleeping "$name"; then
             icon="💤"
+        # Check if static project
+        elif [ "$PROJECT_TYPE" = "spa" ] || [ "$PROJECT_TYPE" = "static" ]; then
+            icon="🌐"
         else
             status=$(get_service_status "$name")
             case "$status" in
                 active) icon="🟢" ;;
                 failed) icon="🔴" ;;
-                *) icon="⏹" ;;
+                *) icon="⬛" ;;
             esac
         fi
         echo "$icon $name"
@@ -246,11 +251,11 @@ show_all_status() {
     
     # Header
     echo ""
-    printf "┌───────────────────────────────────────────────────────────────────────────────┐\n"
-    printf "│  ${CYAN}PET PROJECTS${NC}                                                                 │\n"
-    printf "├──────────────────┬──────────┬───────┬─────────┬───────────┬───────────────────┤\n"
-    printf "│ %-16s │ %-8s │ %-5s │ %-7s │ %-9s │ %-17s │\n" "Name" "Status" "Port" "Memory" "Uptime" "Mode"
-    printf "├──────────────────┼──────────┼───────┼─────────┼───────────┼───────────────────┤\n"
+    printf "┌────────────────────────────────────────────────────────────────────────────────┐\n"
+    printf "│  ${CYAN}PET PROJECTS${NC}                                                                  │\n"
+    printf "├──────────────────┬───────────┬───────┬─────────┬───────────┬───────────────────┤\n"
+    printf "│ %-16s │ %-9s │ %-5s │ %-7s │ %-9s │ %-17s │\n" "Name" "Status" "Port" "Memory" "Uptime" "Mode"
+    printf "├──────────────────┼───────────┼───────┼─────────┼───────────┼───────────────────┤\n"
     
     local name status icon mem uptime mode_str
     for name in "${projects[@]}"; do
@@ -284,9 +289,16 @@ show_all_status() {
                     mode_str="crashed"
                     ;;
                 *)
-                    icon="⏹"
-                    status="stop"
-                    mode_str="stopped"
+                    # Check if static project (no systemd service)
+                    if [ "$PROJECT_TYPE" = "spa" ] || [ "$PROJECT_TYPE" = "static" ]; then
+                        icon="🌐"
+                        status="static"
+                        mode_str="static"
+                    else
+                        icon="⬛"
+                        status="stop"
+                        mode_str="stopped"
+                    fi
                     ;;
             esac
         fi
@@ -296,11 +308,15 @@ show_all_status() {
             mem="${mem} MB"
         fi
         
-        printf "│ %-16s │ %s %-5s │ %-5s │ %-7s │ %-9s │ %-17s │\n" \
-            "$name" "$icon" "$status" "$PROJECT_PORT" "$mem" "$uptime" "$mode_str"
+        # Pad status to 6 chars for alignment (longest is "static")
+        local status_padded="${status}      "
+        status_padded="${status_padded:0:6}"
+
+        printf "│ %-16s │ %s %s│ %-5s │ %-7s │ %-9s │ %-17s │\n" \
+            "$name" "$icon" "$status_padded" "${PROJECT_PORT:--}" "$mem" "$uptime" "$mode_str"
     done
     
-    printf "└──────────────────┴──────────┴───────┴─────────┴───────────┴───────────────────┘\n"
+    printf "└──────────────────┴───────────┴───────┴─────────┴───────────┴───────────────────┘\n"
     echo ""
     echo "  Total memory: ${total_mem}MB / 600MB (slice limit)"
 }
@@ -322,11 +338,16 @@ show_project_details() {
         icon="💤 sleeping"
         mem="-"
         uptime="-"
+    # Check if static project
+    elif [ "$PROJECT_TYPE" = "spa" ] || [ "$PROJECT_TYPE" = "static" ]; then
+        icon="🌐 static"
+        mem="-"
+        uptime="-"
     else
         case "$status" in
             active) icon="🟢 running" ;;
             failed) icon="🔴 failed" ;;
-            *) icon="⏹ stopped" ;;
+            *) icon="⬛ stopped" ;;
         esac
     fi
     
