@@ -125,9 +125,53 @@ async function wakeProject(projectName) {
 }
 
 /**
+ * Wait for service to be ready
+ */
+function waitForService(port, maxAttempts = 10) {
+    return new Promise((resolve, reject) => {
+        let attempt = 0;
+
+        const check = () => {
+            const req = http.request({
+                hostname: '127.0.0.1',
+                port: port,
+                path: '/',
+                method: 'HEAD',
+                timeout: 2000
+            }, (res) => {
+                resolve(true);
+            });
+
+            req.on('error', () => {
+                attempt++;
+                if (attempt < maxAttempts) {
+                    setTimeout(check, 500);
+                } else {
+                    reject(new Error('Service not responding'));
+                }
+            });
+
+            req.on('timeout', () => {
+                req.destroy();
+                attempt++;
+                if (attempt < maxAttempts) {
+                    setTimeout(check, 500);
+                } else {
+                    reject(new Error('Service timeout'));
+                }
+            });
+
+            req.end();
+        };
+
+        check();
+    });
+}
+
+/**
  * Proxy request to the target service
  */
-function proxyRequest(req, res, targetPort) {
+function proxyRequest(req, res, targetPort, bodyBuffer) {
     const options = {
         hostname: '127.0.0.1',
         port: targetPort,
@@ -139,6 +183,11 @@ function proxyRequest(req, res, targetPort) {
     // Remove waker-specific headers
     delete options.headers['x-pet-sleep-project'];
 
+    // Fix content-length if we have buffered body
+    if (bodyBuffer && bodyBuffer.length > 0) {
+        options.headers['content-length'] = bodyBuffer.length;
+    }
+
     const proxyReq = http.request(options, (proxyRes) => {
         res.writeHead(proxyRes.statusCode, proxyRes.headers);
         proxyRes.pipe(res);
@@ -146,12 +195,28 @@ function proxyRequest(req, res, targetPort) {
 
     proxyReq.on('error', (err) => {
         console.error(`[pet-waker] Proxy error: ${err.message}`);
-        res.writeHead(502, { 'Content-Type': 'text/plain' });
-        res.end('Bad Gateway: Service unavailable');
+        if (!res.headersSent) {
+            res.writeHead(502, { 'Content-Type': 'text/plain' });
+            res.end('Bad Gateway: Service unavailable');
+        }
     });
 
-    // Pipe request body
-    req.pipe(proxyReq);
+    // Send buffered body
+    if (bodyBuffer && bodyBuffer.length > 0) {
+        proxyReq.write(bodyBuffer);
+    }
+    proxyReq.end();
+}
+
+/**
+ * Buffer request body
+ */
+function bufferRequestBody(req) {
+    return new Promise((resolve) => {
+        const chunks = [];
+        req.on('data', chunk => chunks.push(chunk));
+        req.on('end', () => resolve(Buffer.concat(chunks)));
+    });
 }
 
 /**
@@ -169,15 +234,25 @@ async function handleRequest(req, res) {
     console.log(`[pet-waker] Request for sleeping project: ${projectName} ${req.method} ${req.url}`);
 
     try {
+        // Buffer request body first (so we can replay it after waking)
+        const bodyBuffer = await bufferRequestBody(req);
+
         // Wake the project
         const port = await wakeProject(projectName);
 
+        // Wait for service to be fully ready
+        console.log(`[pet-waker] Waiting for service on port ${port}...`);
+        await waitForService(port, 15);
+        console.log(`[pet-waker] Service ready, proxying request`);
+
         // Proxy the original request
-        proxyRequest(req, res, port);
+        proxyRequest(req, res, port, bodyBuffer);
     } catch (err) {
         console.error(`[pet-waker] Error: ${err.message}`);
-        res.writeHead(503, { 'Content-Type': 'text/plain' });
-        res.end(`Service Unavailable: ${err.message}`);
+        if (!res.headersSent) {
+            res.writeHead(503, { 'Content-Type': 'text/plain' });
+            res.end(`Service Unavailable: ${err.message}`);
+        }
     }
 }
 
