@@ -312,7 +312,7 @@ show_all_status() {
         local status_padded="${status}      "
         status_padded="${status_padded:0:6}"
 
-        printf "│ %-16s │ %s %s│ %-5s │ %-7s │ %-9s │ %-17s │\n" \
+        printf "│ %-16s │%s %s │ %-5s │ %-7s │ %-9s │ %-17s │\n" \
             "$name" "$icon" "$status_padded" "${PROJECT_PORT:--}" "$mem" "$uptime" "$mode_str"
     done
     
