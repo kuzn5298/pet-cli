@@ -88,7 +88,12 @@ async function wakeProject(projectName) {
         });
 
         wakeProcess.stderr.on('data', (data) => {
-            errorOutput += data.toString();
+            const msg = data.toString();
+            errorOutput += msg;
+            // Show debug output in real-time
+            if (msg.includes('[wake-debug]')) {
+                console.log(msg.trim());
+            }
         });
 
         wakeProcess.on('close', (code) => {

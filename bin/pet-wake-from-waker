@@ -6,7 +6,7 @@
 # Outputs: port number on success, exits with error on failure
 #
 
-set -e
+# Don't use set -e, handle errors manually for better error messages
 
 PET_DIR="${PET_DIR:-$HOME/.pet-cli}"
 PET_CONFIG_DIR="${PET_CONFIG_DIR:-$HOME/.config/pet}"
@@ -24,8 +24,21 @@ BLUE=''
 CYAN=''
 NC=''
 
+# Debug log function - writes to stderr so it doesn't interfere with port output
+debug() {
+    echo "[wake-debug] $*" >&2
+}
+
+debug "Starting wake for: $1"
+debug "PET_DIR=$PET_DIR"
+debug "XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR"
+
 # Load utils
-source "$PET_DIR/lib/utils.sh"
+if ! source "$PET_DIR/lib/utils.sh" 2>/dev/null; then
+    echo "Error: Failed to load utils from $PET_DIR/lib/utils.sh" >&2
+    exit 1
+fi
+debug "Utils loaded"
 
 name="$1"
 
@@ -39,33 +52,49 @@ if ! project_exists "$name"; then
     echo "Error: Project $name not found" >&2
     exit 1
 fi
+debug "Project exists"
 
-# Load config
-load_project_config "$name"
+# Load config - redirect stderr to avoid exit messages
+config_file="$(get_project_config "$name")"
+if [ ! -f "$config_file" ]; then
+    echo "Error: Config file not found: $config_file" >&2
+    exit 1
+fi
+source "$config_file"
+debug "Config loaded: PORT=$PROJECT_PORT"
 
 # Check if actually sleeping
 if ! is_project_sleeping "$name"; then
-    # Already awake, just return port
+    debug "Not sleeping, returning port"
     echo "$PROJECT_PORT"
     exit 0
 fi
+debug "Project is sleeping, waking up"
 
 # Start the service
-start_output=$(systemctl --user start "pet-${name}.service" 2>&1) || {
-    echo "Error: Failed to start service: $start_output" >&2
+debug "Starting service pet-${name}.service"
+start_result=$(systemctl --user start "pet-${name}.service" 2>&1)
+start_code=$?
+debug "systemctl returned: code=$start_code output=$start_result"
+
+if [ $start_code -ne 0 ]; then
+    echo "Error: Failed to start service (code $start_code): $start_result" >&2
     exit 1
-}
+fi
 
 # Wait for service to be ready
 max_attempts=30
 attempt=0
+debug "Waiting for service to be ready"
 
 while [ $attempt -lt $max_attempts ]; do
     status=$(get_service_status "$name")
+    debug "Attempt $attempt: status=$status"
 
     if [ "$status" = "active" ]; then
         # Check if responding
         if curl -s -o /dev/null --connect-timeout 1 "http://127.0.0.1:${PROJECT_PORT}/" 2>/dev/null; then
+            debug "Service is responding"
             break
         fi
     elif [ "$status" = "failed" ]; then
@@ -74,13 +103,14 @@ while [ $attempt -lt $max_attempts ]; do
     fi
 
     sleep 1
-    ((attempt++))
+    attempt=$((attempt + 1))
 done
 
 if [ $attempt -ge $max_attempts ]; then
     echo "Error: Service startup timeout" >&2
     exit 1
 fi
+debug "Service is ready"
 
 # Switch nginx back to service
 conf="/etc/nginx/sites-available/pet-${name}.conf"
