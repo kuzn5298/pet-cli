@@ -308,9 +308,9 @@ show_all_status() {
             mem="${mem} MB"
         fi
         
-        # Pad status to 6 chars for alignment (longest is "static")
-        local status_padded="${status}      "
-        status_padded="${status_padded:0:6}"
+        # Pad status to 7 chars for alignment (longest is "static" + 1 for emoji width compensation)
+        local status_padded="${status}       "
+        status_padded="${status_padded:0:7}"
 
         printf "│ %-16s │%s %s │ %-5s │ %-7s │ %-9s │ %-17s │\n" \
             "$name" "$icon" "$status_padded" "${PROJECT_PORT:--}" "$mem" "$uptime" "$mode_str"
