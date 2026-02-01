@@ -67,7 +67,8 @@ install_sleep_units() {
     if [ -f "$SCRIPT_DIR/templates/pet-waker.service" ]; then
         cat "$SCRIPT_DIR/templates/pet-waker.service" | \
             sed "s|{{PET_DIR}}|$SCRIPT_DIR|g" | \
-            sed "s|{{PET_CONFIG_DIR}}|$HOME/.config/pet|g" \
+            sed "s|{{PET_CONFIG_DIR}}|$HOME/.config/pet|g" | \
+            sed "s|%U|$(id -u)|g" \
             > "$systemd_user_dir/pet-waker.service"
         echo -e "${GREEN}✓${NC} Installed pet-waker.service"
     fi

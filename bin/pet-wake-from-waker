@@ -11,6 +11,11 @@ set -e
 PET_DIR="${PET_DIR:-$HOME/.pet-cli}"
 PET_CONFIG_DIR="${PET_CONFIG_DIR:-$HOME/.config/pet}"
 
+# Setup systemd user session environment
+# Required for systemctl --user to work from service context
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}"
+
 # Colors (disabled for script output)
 RED=''
 GREEN=''
@@ -46,8 +51,8 @@ if ! is_project_sleeping "$name"; then
 fi
 
 # Start the service
-systemctl --user start "pet-${name}.service" 2>/dev/null || {
-    echo "Error: Failed to start service" >&2
+start_output=$(systemctl --user start "pet-${name}.service" 2>&1) || {
+    echo "Error: Failed to start service: $start_output" >&2
     exit 1
 }
 
