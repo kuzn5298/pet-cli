@@ -9,8 +9,10 @@ cmd_config() {
     local memory=""
     local restart_attempts=""
     local cmd=""
+    local sleep_enabled=""
+    local sleep_timeout=""
     local show_only=true
-    
+
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --memory)
@@ -25,6 +27,21 @@ cmd_config() {
                 ;;
             --cmd)
                 cmd="$2"
+                show_only=false
+                shift 2
+                ;;
+            --sleep)
+                sleep_enabled="true"
+                show_only=false
+                shift
+                ;;
+            --no-sleep)
+                sleep_enabled="false"
+                show_only=false
+                shift
+                ;;
+            --sleep-timeout)
+                sleep_timeout="$2"
                 show_only=false
                 shift 2
                 ;;
@@ -70,7 +87,28 @@ cmd_config() {
         changed=true
         echo -e "${GREEN}✓${NC} Updated command to: $cmd"
     fi
-    
+
+    if [ -n "$sleep_enabled" ]; then
+        PROJECT_SLEEP_ENABLED="$sleep_enabled"
+        changed=true
+        if [ "$sleep_enabled" = "true" ]; then
+            echo -e "${GREEN}✓${NC} Sleep mode enabled"
+        else
+            echo -e "${GREEN}✓${NC} Sleep mode disabled"
+            # Wake up if currently sleeping
+            if is_project_sleeping "$name"; then
+                PROJECT_SLEEP_STATUS="awake"
+                echo -e "${CYAN}  Waking up project...${NC}"
+            fi
+        fi
+    fi
+
+    if [ -n "$sleep_timeout" ]; then
+        PROJECT_SLEEP_TIMEOUT="$sleep_timeout"
+        changed=true
+        echo -e "${GREEN}✓${NC} Updated sleep timeout to: $sleep_timeout"
+    fi
+
     if [ "$changed" = true ]; then
         save_project_config "$name"
         
@@ -86,7 +124,7 @@ cmd_config() {
 # Show configuration
 show_config() {
     local name="$1"
-    
+
     echo ""
     printf "┌─────────────────────────────────────────────┐\n"
     printf "│ ${CYAN}%-43s${NC} │\n" "$name configuration"
@@ -97,10 +135,21 @@ show_config() {
     printf "│ type: %-36s │\n" "${PROJECT_TYPE:-proxy}"
     printf "│ memory_limit: %-28s │\n" "$PROJECT_MEMORY"
     printf "│ restart_attempts: %-24s │\n" "$PROJECT_RESTART_ATTEMPTS"
-    
+
     if [ -n "$PROJECT_DOMAIN" ]; then
         printf "│ domain: %-34s │\n" "$PROJECT_DOMAIN"
     fi
-    
+
+    # Sleep settings
+    local sleep_info="disabled"
+    if [ "${PROJECT_SLEEP_ENABLED:-false}" = "true" ]; then
+        if [ "${PROJECT_SLEEP_STATUS:-awake}" = "sleeping" ]; then
+            sleep_info="enabled (sleeping, timeout: ${PROJECT_SLEEP_TIMEOUT:-30m})"
+        else
+            sleep_info="enabled (awake, timeout: ${PROJECT_SLEEP_TIMEOUT:-30m})"
+        fi
+    fi
+    printf "│ sleep: %-35s │\n" "$sleep_info"
+
     printf "└─────────────────────────────────────────────┘\n"
 }

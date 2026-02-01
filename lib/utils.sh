@@ -59,6 +59,9 @@ PROJECT_DOMAIN="$PROJECT_DOMAIN"
 PROJECT_USER="$PROJECT_USER"
 PROJECT_TYPE="${PROJECT_TYPE:-proxy}"
 PROJECT_MAX_BODY_SIZE="${PROJECT_MAX_BODY_SIZE:-10M}"
+PROJECT_SLEEP_ENABLED="${PROJECT_SLEEP_ENABLED:-false}"
+PROJECT_SLEEP_TIMEOUT="${PROJECT_SLEEP_TIMEOUT:-30m}"
+PROJECT_SLEEP_STATUS="${PROJECT_SLEEP_STATUS:-awake}"
 EOF
 }
 
@@ -193,4 +196,87 @@ format_bytes() {
     else
         echo "${bytes}B"
     fi
+}
+
+# Check if project is sleeping
+is_project_sleeping() {
+    local name="$1"
+    local config_file
+    config_file="$(get_project_config "$name")"
+
+    if [ -f "$config_file" ]; then
+        local status
+        status=$(grep "^PROJECT_SLEEP_STATUS=" "$config_file" 2>/dev/null | cut -d'"' -f2)
+        [ "$status" = "sleeping" ]
+    else
+        return 1
+    fi
+}
+
+# Check if project has sleep enabled
+is_sleep_enabled() {
+    local name="$1"
+    local config_file
+    config_file="$(get_project_config "$name")"
+
+    if [ -f "$config_file" ]; then
+        local enabled
+        enabled=$(grep "^PROJECT_SLEEP_ENABLED=" "$config_file" 2>/dev/null | cut -d'"' -f2)
+        [ "$enabled" = "true" ]
+    else
+        return 1
+    fi
+}
+
+# Set project sleep status
+set_sleep_status() {
+    local name="$1"
+    local status="$2"
+    local config_file
+    config_file="$(get_project_config "$name")"
+
+    if [ -f "$config_file" ]; then
+        sed -i "s|^PROJECT_SLEEP_STATUS=.*|PROJECT_SLEEP_STATUS=\"$status\"|" "$config_file"
+    fi
+}
+
+# Parse timeout string to seconds (e.g., "30m" -> 1800)
+parse_timeout_to_seconds() {
+    local timeout="$1"
+    local value="${timeout%[smhd]}"
+    local unit="${timeout: -1}"
+
+    case "$unit" in
+        s) echo "$value" ;;
+        m) echo $((value * 60)) ;;
+        h) echo $((value * 3600)) ;;
+        d) echo $((value * 86400)) ;;
+        *) echo "$timeout" ;; # Assume seconds if no unit
+    esac
+}
+
+# Get list of sleepable projects
+list_sleepable_projects() {
+    ensure_config_dir
+    local f
+    for f in "$PET_CONFIG_DIR/projects"/*.conf; do
+        if [ -f "$f" ]; then
+            if grep -q '^PROJECT_SLEEP_ENABLED="true"' "$f" 2>/dev/null; then
+                basename "$f" .conf
+            fi
+        fi
+    done
+}
+
+# Get list of sleeping projects
+list_sleeping_projects() {
+    ensure_config_dir
+    local f
+    for f in "$PET_CONFIG_DIR/projects"/*.conf; do
+        if [ -f "$f" ]; then
+            if grep -q '^PROJECT_SLEEP_STATUS="sleeping"' "$f" 2>/dev/null; then
+                basename "$f" .conf
+            fi
+        fi
+    done
 }

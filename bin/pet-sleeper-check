@@ -1,0 +1,149 @@
+#!/bin/bash
+#
+# pet-sleeper-check - Check for inactive projects and put them to sleep
+#
+# This script is run periodically by pet-sleeper.timer
+# It checks nginx access logs for each sleepable project
+# and puts inactive projects to sleep
+#
+
+set -e
+
+PET_DIR="${PET_DIR:-$HOME/.pet-cli}"
+PET_CONFIG_DIR="${PET_CONFIG_DIR:-$HOME/.config/pet}"
+NGINX_LOG="/var/log/nginx/access.log"
+
+# Load utils
+source "$PET_DIR/lib/utils.sh"
+
+# Colors (for logging)
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+}
+
+# Get last request time for a domain from nginx access log
+get_last_request_time() {
+    local domain="$1"
+
+    if [ ! -f "$NGINX_LOG" ]; then
+        # Try common alternative locations
+        for log_path in /var/log/nginx/access.log /var/log/access.log; do
+            if [ -f "$log_path" ]; then
+                NGINX_LOG="$log_path"
+                break
+            fi
+        done
+    fi
+
+    if [ ! -f "$NGINX_LOG" ]; then
+        echo "0"
+        return
+    fi
+
+    # Find last request for this domain
+    # nginx log format: IP - - [date] "request" status size "referer" "user-agent" "host"
+    # We look for the host header matching our domain
+    local last_line
+    last_line=$(grep -i "\"$domain\"" "$NGINX_LOG" 2>/dev/null | tail -1 || true)
+
+    if [ -z "$last_line" ]; then
+        # Try alternative: grep for domain in the log
+        last_line=$(grep -i "$domain" "$NGINX_LOG" 2>/dev/null | tail -1 || true)
+    fi
+
+    if [ -z "$last_line" ]; then
+        echo "0"
+        return
+    fi
+
+    # Extract timestamp from nginx log format: [dd/Mon/yyyy:HH:MM:SS +0000]
+    local timestamp
+    timestamp=$(echo "$last_line" | grep -oP '\[\K[^\]]+' | head -1)
+
+    if [ -z "$timestamp" ]; then
+        echo "0"
+        return
+    fi
+
+    # Convert nginx timestamp to epoch
+    # Format: 01/Feb/2024:12:34:56 +0000
+    local epoch
+    epoch=$(date -d "$(echo "$timestamp" | sed 's/:/ /' | sed 's|/| |g')" +%s 2>/dev/null || echo "0")
+
+    echo "$epoch"
+}
+
+# Check and sleep inactive projects
+check_and_sleep_projects() {
+    local projects
+    projects=($(list_sleepable_projects))
+
+    if [ ${#projects[@]} -eq 0 ]; then
+        log "No sleepable projects found"
+        return
+    fi
+
+    local now
+    now=$(date +%s)
+
+    for name in "${projects[@]}"; do
+        # Skip if already sleeping
+        if is_project_sleeping "$name"; then
+            continue
+        fi
+
+        # Load config
+        load_project_config "$name" 2>/dev/null || continue
+
+        # Check if service is active
+        local status
+        status=$(get_service_status "$name")
+        if [ "$status" != "active" ]; then
+            continue
+        fi
+
+        # Get timeout in seconds
+        local timeout_seconds
+        timeout_seconds=$(parse_timeout_to_seconds "${PROJECT_SLEEP_TIMEOUT:-30m}")
+
+        # Get last request time
+        local last_request=0
+        if [ -n "$PROJECT_DOMAIN" ]; then
+            last_request=$(get_last_request_time "$PROJECT_DOMAIN")
+        fi
+
+        # If no domain or no requests found, use service start time
+        if [ "$last_request" = "0" ]; then
+            local start_timestamp
+            start_timestamp=$(systemctl --user show "pet-${name}.service" --property=ActiveEnterTimestamp 2>/dev/null | cut -d= -f2)
+            if [ -n "$start_timestamp" ]; then
+                last_request=$(date -d "$start_timestamp" +%s 2>/dev/null || echo "0")
+            fi
+        fi
+
+        # Calculate idle time
+        local idle_time=$((now - last_request))
+
+        log "Project $name: idle for ${idle_time}s (timeout: ${timeout_seconds}s)"
+
+        # Check if timeout exceeded
+        if [ "$idle_time" -gt "$timeout_seconds" ]; then
+            log "Putting $name to sleep (idle for ${idle_time}s > timeout ${timeout_seconds}s)"
+
+            # Put to sleep
+            source "$PET_DIR/lib/sleep.sh"
+            cmd_sleep "$name" 2>/dev/null || true
+        fi
+    done
+}
+
+# Main
+log "Starting sleep check..."
+check_and_sleep_projects
+log "Sleep check complete"

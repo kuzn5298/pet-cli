@@ -1,0 +1,15 @@
+[Unit]
+Description=Pet Sleeper - Check and sleep inactive projects
+
+[Service]
+Type=oneshot
+ExecStart={{PET_DIR}}/bin/pet-sleeper-check
+
+# Environment
+Environment=PET_DIR={{PET_DIR}}
+Environment=PET_CONFIG_DIR={{PET_CONFIG_DIR}}
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pet-sleeper

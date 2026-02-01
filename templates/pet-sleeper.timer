@@ -1,0 +1,10 @@
+[Unit]
+Description=Pet Sleeper - Check for inactive projects every 5 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+Unit=pet-sleeper.service
+
+[Install]
+WantedBy=timers.target

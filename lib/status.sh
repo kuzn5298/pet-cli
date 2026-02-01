@@ -18,21 +18,26 @@ cmd_status() {
 cmd_list() {
     local projects
     projects=($(list_projects))
-    
+
     if [ ${#projects[@]} -eq 0 ]; then
         echo "No projects deployed"
         echo "Run 'pet setup <n> --port <N>' to deploy a project"
         return
     fi
-    
+
     local name status icon
     for name in "${projects[@]}"; do
-        status=$(get_service_status "$name")
-        case "$status" in
-            active) icon="🟢" ;;
-            failed) icon="🔴" ;;
-            *) icon="⏹" ;;
-        esac
+        # Check if sleeping first
+        if is_project_sleeping "$name"; then
+            icon="💤"
+        else
+            status=$(get_service_status "$name")
+            case "$status" in
+                active) icon="🟢" ;;
+                failed) icon="🔴" ;;
+                *) icon="⏹" ;;
+            esac
+        fi
         echo "$icon $name"
     done
 }
@@ -250,28 +255,41 @@ show_all_status() {
     local name status icon mem uptime mode_str
     for name in "${projects[@]}"; do
         load_project_config "$name" 2>/dev/null || continue
-        
+
         status=$(get_service_status "$name")
         mem=$(get_memory_usage "$name")
         uptime=$(get_uptime "$name")
-        
-        case "$status" in
-            active)
-                icon="🟢"
-                status="runn"
-                mode_str="always-on"
-                ;;
-            failed)
-                icon="🔴"
-                status="fail"
-                mode_str="crashed"
-                ;;
-            *)
-                icon="⏹"
-                status="stop"
-                mode_str="stopped"
-                ;;
-        esac
+
+        # Check if sleeping
+        if is_project_sleeping "$name"; then
+            icon="💤"
+            status="sleep"
+            mode_str="sleeping"
+            mem="-"
+            uptime="-"
+        else
+            case "$status" in
+                active)
+                    icon="🟢"
+                    status="runn"
+                    if [ "${PROJECT_SLEEP_ENABLED:-false}" = "true" ]; then
+                        mode_str="sleepable"
+                    else
+                        mode_str="always-on"
+                    fi
+                    ;;
+                failed)
+                    icon="🔴"
+                    status="fail"
+                    mode_str="crashed"
+                    ;;
+                *)
+                    icon="⏹"
+                    status="stop"
+                    mode_str="stopped"
+                    ;;
+            esac
+        fi
         
         if [ "$mem" != "-" ]; then
             total_mem=$((total_mem + mem))
@@ -290,20 +308,27 @@ show_all_status() {
 # Show single project details
 show_project_details() {
     local name="$1"
-    
+
     load_project_config "$name"
-    
+
     local status icon mem uptime restarts
     status=$(get_service_status "$name")
     mem=$(get_memory_usage "$name")
     uptime=$(get_uptime "$name")
     restarts=$(get_restart_count "$name")
-    
-    case "$status" in
-        active) icon="🟢 running" ;;
-        failed) icon="🔴 failed" ;;
-        *) icon="⏹ stopped" ;;
-    esac
+
+    # Check if sleeping
+    if is_project_sleeping "$name"; then
+        icon="💤 sleeping"
+        mem="-"
+        uptime="-"
+    else
+        case "$status" in
+            active) icon="🟢 running" ;;
+            failed) icon="🔴 failed" ;;
+            *) icon="⏹ stopped" ;;
+        esac
+    fi
     
     echo ""
     printf "┌─────────────────────────────────────────────────┐\n"
@@ -326,9 +351,20 @@ show_project_details() {
     if [ -n "$PROJECT_DOMAIN" ]; then
         printf "│ Domain:      %-35s │\n" "$PROJECT_DOMAIN"
     fi
-    
+
+    # Sleep info
+    if [ "${PROJECT_SLEEP_ENABLED:-false}" = "true" ]; then
+        local sleep_info
+        if is_project_sleeping "$name"; then
+            sleep_info="sleeping (timeout: ${PROJECT_SLEEP_TIMEOUT:-30m})"
+        else
+            sleep_info="awake (timeout: ${PROJECT_SLEEP_TIMEOUT:-30m})"
+        fi
+        printf "│ Sleep:       %-35s │\n" "$sleep_info"
+    fi
+
     printf "└─────────────────────────────────────────────────┘\n"
-    
+
     # Show recent logs
     echo ""
     echo "Recent logs (last 5 lines):"

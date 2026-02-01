@@ -6,7 +6,7 @@
 
 set -e
 
-VERSION="1.1.6"
+VERSION="1.2.0"
 PET_DIR="${PET_DIR:-$HOME/.pet-cli}"
 PET_CONFIG_DIR="${PET_CONFIG_DIR:-$HOME/.config/pet}"
 LIB_DIR="$PET_DIR/lib"
@@ -28,6 +28,7 @@ source "$LIB_DIR/logs.sh"
 source "$LIB_DIR/nginx.sh"
 source "$LIB_DIR/crashes.sh"
 source "$LIB_DIR/config.sh"
+source "$LIB_DIR/sleep.sh"
 
 # Show help
 show_help() {
@@ -48,14 +49,18 @@ COMMANDS:
     enable <name>         Enable a disabled project
     disable <name>        Fully disable a project
     remove <name>         Remove project from management
-    
+
+    sleep <name>          Put project to sleep (saves resources)
+    wake <name>           Wake up a sleeping project
+    sleep-service         Manage waker/sleeper services
+
     logs <name>           Show project logs
     crashes [name]        Show crash history
-    
+
     config <name>         Show/edit project configuration
-    
+
     nginx <name>          Manage nginx configuration
-    
+
     update                Update pet-cli from git
     version               Show version
 
@@ -70,9 +75,24 @@ SETUP OPTIONS:
     --spa                 SPA type (static + routing)
     --static              Static file type (CDN)
 
+CONFIG OPTIONS:
+    --sleep               Enable sleep mode (auto-sleep when inactive)
+    --no-sleep            Disable sleep mode
+    --sleep-timeout <T>   Inactivity timeout (e.g., 30m, 1h)
+
+SLEEP-SERVICE:
+    pet sleep-service start    Start waker and sleeper services
+    pet sleep-service stop     Stop waker and sleeper services
+    pet sleep-service restart  Restart services
+    pet sleep-service status   Show services and sleeping projects status
+
 EXAMPLES:
     pet setup my-api --port 3000 --domain api.example.com --db user:pass --always-on
     pet setup my-spa --spa --domain app.example.com
+    pet config my-api --sleep --sleep-timeout 30m
+    pet sleep-service start
+    pet sleep my-api
+    pet wake my-api
     pet status
     pet logs my-api -f
 
@@ -114,6 +134,15 @@ main() {
             ;;
         remove|rm)
             cmd_remove "$@"
+            ;;
+        sleep)
+            cmd_sleep "$@"
+            ;;
+        wake)
+            cmd_wake "$@"
+            ;;
+        sleep-service)
+            cmd_sleep_service "$@"
             ;;
         logs|log)
             cmd_logs "$@"

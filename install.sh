@@ -16,6 +16,8 @@ echo "Installing pet-cli..."
 # Make scripts executable
 chmod +x "$SCRIPT_DIR/pet"
 chmod +x "$SCRIPT_DIR/lib/"*.sh 2>/dev/null || true
+chmod +x "$SCRIPT_DIR/bin/"* 2>/dev/null || true
+chmod +x "$SCRIPT_DIR/waker/"*.js 2>/dev/null || true
 
 # Create symlink in /usr/local/bin
 if [ -w /usr/local/bin ]; then
@@ -56,10 +58,57 @@ if [ -d /etc/nginx/snippets ]; then
     done
 fi
 
+# Install sleep/wake systemd units
+install_sleep_units() {
+    local systemd_user_dir="$HOME/.config/systemd/user"
+    mkdir -p "$systemd_user_dir"
+
+    # Install pet-waker service
+    if [ -f "$SCRIPT_DIR/templates/pet-waker.service" ]; then
+        cat "$SCRIPT_DIR/templates/pet-waker.service" | \
+            sed "s|{{PET_DIR}}|$SCRIPT_DIR|g" | \
+            sed "s|{{PET_CONFIG_DIR}}|$HOME/.config/pet|g" \
+            > "$systemd_user_dir/pet-waker.service"
+        echo -e "${GREEN}✓${NC} Installed pet-waker.service"
+    fi
+
+    # Install pet-sleeper service
+    if [ -f "$SCRIPT_DIR/templates/pet-sleeper.service" ]; then
+        cat "$SCRIPT_DIR/templates/pet-sleeper.service" | \
+            sed "s|{{PET_DIR}}|$SCRIPT_DIR|g" | \
+            sed "s|{{PET_CONFIG_DIR}}|$HOME/.config/pet|g" \
+            > "$systemd_user_dir/pet-sleeper.service"
+        echo -e "${GREEN}✓${NC} Installed pet-sleeper.service"
+    fi
+
+    # Install pet-sleeper timer
+    if [ -f "$SCRIPT_DIR/templates/pet-sleeper.timer" ]; then
+        cp "$SCRIPT_DIR/templates/pet-sleeper.timer" "$systemd_user_dir/pet-sleeper.timer"
+        echo -e "${GREEN}✓${NC} Installed pet-sleeper.timer"
+    fi
+
+    # Reload systemd
+    systemctl --user daemon-reload 2>/dev/null || true
+
+    # Enable waker and sleeper (but don't start)
+    systemctl --user enable pet-waker.service 2>/dev/null || true
+    systemctl --user enable pet-sleeper.timer 2>/dev/null || true
+
+    echo -e "${YELLOW}!${NC} To start sleep/wake services:"
+    echo "    systemctl --user start pet-waker"
+    echo "    systemctl --user start pet-sleeper.timer"
+}
+
+# Install sleep units if systemd is available
+if command -v systemctl &> /dev/null; then
+    install_sleep_units
+fi
+
 echo ""
 echo -e "${GREEN}✓ pet-cli installed successfully${NC}"
 echo ""
 echo "Quick start:"
 echo "  pet setup my-app --port 3000 --domain app.example.com"
+echo "  pet config my-app --sleep --sleep-timeout 30m"
 echo "  pet status"
 echo "  pet --help"
