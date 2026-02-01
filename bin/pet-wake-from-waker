@@ -1,0 +1,97 @@
+#!/bin/bash
+#
+# pet-wake-from-waker - Wake a sleeping project (called by pet-waker.js)
+#
+# Usage: pet-wake-from-waker <project-name>
+# Outputs: port number on success, exits with error on failure
+#
+
+set -e
+
+PET_DIR="${PET_DIR:-$HOME/.pet-cli}"
+PET_CONFIG_DIR="${PET_CONFIG_DIR:-$HOME/.config/pet}"
+
+# Colors (disabled for script output)
+RED=''
+GREEN=''
+YELLOW=''
+BLUE=''
+CYAN=''
+NC=''
+
+# Load utils
+source "$PET_DIR/lib/utils.sh"
+
+name="$1"
+
+if [ -z "$name" ]; then
+    echo "Error: Project name required" >&2
+    exit 1
+fi
+
+# Check project exists
+if ! project_exists "$name"; then
+    echo "Error: Project $name not found" >&2
+    exit 1
+fi
+
+# Load config
+load_project_config "$name"
+
+# Check if actually sleeping
+if ! is_project_sleeping "$name"; then
+    # Already awake, just return port
+    echo "$PROJECT_PORT"
+    exit 0
+fi
+
+# Start the service
+systemctl --user start "pet-${name}.service" 2>/dev/null || {
+    echo "Error: Failed to start service" >&2
+    exit 1
+}
+
+# Wait for service to be ready
+max_attempts=30
+attempt=0
+
+while [ $attempt -lt $max_attempts ]; do
+    status=$(get_service_status "$name")
+
+    if [ "$status" = "active" ]; then
+        # Check if responding
+        if curl -s -o /dev/null --connect-timeout 1 "http://127.0.0.1:${PROJECT_PORT}/" 2>/dev/null; then
+            break
+        fi
+    elif [ "$status" = "failed" ]; then
+        echo "Error: Service failed to start" >&2
+        exit 1
+    fi
+
+    sleep 1
+    ((attempt++))
+done
+
+if [ $attempt -ge $max_attempts ]; then
+    echo "Error: Service startup timeout" >&2
+    exit 1
+fi
+
+# Switch nginx back to service
+conf="/etc/nginx/sites-available/pet-${name}.conf"
+if [ -f "$conf" ]; then
+    # Restore original upstream port
+    sudo sed -i "s|server 127.0.0.1:3999; # sleeping: original port ${PROJECT_PORT}|server 127.0.0.1:${PROJECT_PORT};|" "$conf" 2>/dev/null || true
+
+    # Remove sleep header
+    sudo sed -i "/X-Pet-Sleep-Project/d" "$conf" 2>/dev/null || true
+
+    # Reload nginx
+    sudo nginx -t 2>/dev/null && sudo systemctl reload nginx 2>/dev/null || true
+fi
+
+# Update status
+set_sleep_status "$name" "awake"
+
+# Output port for waker to proxy to
+echo "$PROJECT_PORT"

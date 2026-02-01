@@ -69,13 +69,14 @@ async function wakeProject(projectName) {
 
         console.log(`[pet-waker] Waking project: ${projectName}`);
 
-        // Use pet-cli to wake the project
-        const petPath = path.join(PET_DIR, 'pet');
-        const wakeProcess = spawn('bash', ['-c', `source ${petPath} && wake_from_waker "${projectName}"`], {
+        // Use pet-wake-from-waker script
+        const wakeScript = path.join(PET_DIR, 'bin', 'pet-wake-from-waker');
+        const wakeProcess = spawn(wakeScript, [projectName], {
             env: {
                 ...process.env,
                 PET_DIR,
-                PET_CONFIG_DIR
+                PET_CONFIG_DIR,
+                PATH: process.env.PATH
             }
         });
 
